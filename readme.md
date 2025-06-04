@@ -1,87 +1,115 @@
-# React + Node.js App Deployment on AWS with NAT Gateway (CloudFormation)
 
-This project provisions an AWS infrastructure using CloudFormation to deploy a React.js (Node.js) app on a private EC2 instance. A public EC2 instance acts as a reverse proxy (Nginx) to securely expose the app to the internet.
+# React App Deployment on AWS with CloudFormation
 
-## Architecture
-
-* **VPC** with Public and Private Subnets
-* **NAT Gateway** for internet access to private EC2
-* **EC2 Public Instance** (Nginx Reverse Proxy)
-* **EC2 Private Instance** (Node.js/React App)
-
-## Features
-
-* React app created via CLI (`create-react-app`)
-* `npm start` runs app in private EC2
-* Nginx reverse proxy forwards public traffic to private app
-* Parameterized CloudFormation for dynamic VPCs and ports
+This project uses **AWS CloudFormation** to provision a secure, scalable infrastructure that deploys a React application served from a private EC2 instance via a public Nginx reverse proxy.
 
 ---
 
-## How to Deploy
+## 📦 Components Created
 
-### Prerequisites
+- **VPC** with public and private subnets
+- **NAT Gateway** for outbound internet access from private subnet
+- **Internet Gateway** for public subnet
+- **Public EC2 Instance**:
+  - Runs **Nginx**
+  - Acts as a **reverse proxy**
+- **Private EC2 Instance**:
+  - Runs **React app** using `serve`
+- **Security Groups** to control access
+- **UserData scripts** to automatically install and configure services
 
-* AWS account and IAM permissions to launch CloudFormation stacks
-* EC2 KeyPair created in the desired region (e.g., `my-keypair`)
+---
 
-### Deployment Steps
+## 🔧 Parameters
 
-1. **Clone this repository**
+| Parameter     | Description                    | Default     |
+|--------------|--------------------------------|-------------|
+| `KeyName`     | Name of your EC2 Key Pair for SSH access | *Required* |
+| `InstanceType`| EC2 instance type              | `t3.micro`  |
+| `AppPort`     | Port your React app will run on| `3000`      |
 
-```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
-```
+---
 
-2. **Deploy CloudFormation Stack**
+## 🚀 How to Deploy
+
+### 1. Prerequisites
+
+- An existing EC2 **Key Pair** in your AWS region
+- AWS CLI configured (`aws configure`)
+- Permissions to create VPC, EC2, EIP, NAT Gateway, etc.
+
+### 2. Deploy Stack
 
 ```bash
 aws cloudformation create-stack \
-  --stack-name react-app-stack \
+  --stack-name ReactAppStack \
   --template-body file://template.yaml \
-  --parameters ParameterKey=KeyName,ParameterValue=my-keypair \
+  --parameters ParameterKey=KeyName,ParameterValue=your-key-name \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
-3. **Wait until the stack completes.**
+> Replace `your-key-name` with your EC2 Key Pair name.
 
-4. **Get the Public IP** from stack outputs:
+### 3. Wait for Deployment to Complete
+
+Monitor the stack via:
+```bash
+aws cloudformation describe-stacks --stack-name ReactAppStack
+```
+
+---
+
+## 🌐 Access the React App
+
+Once the stack is created, access your app via:
+
+```bash
+http://<PublicIP>
+```
+
+You can find the public IP in the **Outputs** tab of the CloudFormation stack, or use:
 
 ```bash
 aws cloudformation describe-stacks \
-  --stack-name react-app-stack \
-  --query "Stacks[0].Outputs"
-```
-
-5. **Access your App:**
-
-```
-http://<Public-IP>
+  --stack-name ReactAppStack \
+  --query "Stacks[0].Outputs[?OutputKey=='PublicIP'].OutputValue" \
+  --output text
 ```
 
 ---
 
-## Nginx Configuration Notes
+## 🛠 What Happens Internally
 
-The reverse proxy on the public EC2 is configured to forward requests to the private instance. The configuration is written automatically to `/etc/nginx/sites-available/react-proxy` and symlinked to `sites-enabled/`.
+- The private EC2:
+  - Creates a React app via `create-react-app`
+  - Builds and serves it using `serve` on port `3000`
+- The public EC2:
+  - Configures Nginx to reverse proxy traffic to the private EC2’s private IP and port
+  - Restarts Nginx automatically
 
-You can manually edit and test the config by SSH-ing into the public EC2:
+---
+
+## 🧼 Cleanup
+
+To delete all resources:
 
 ```bash
-ssh -i my-keypair.pem ubuntu@<Public-IP>
-sudo nano /etc/nginx/sites-available/react-proxy
-sudo nginx -t && sudo systemctl restart nginx
+aws cloudformation delete-stack --stack-name ReactAppStack
 ```
 
 ---
 
-## Future Enhancements
+## 📁 File Structure
 
-* Use `npm run build` + serve static files with Nginx
-* Setup TLS (HTTPS) with Let's Encrypt
-* CI/CD integration
+```
+.
+├── template.yaml   # CloudFormation template
+└── README.md       # This file
+```
 
 ---
 
+## 🔐 Notes
 
+- Make sure the NAT Gateway and EIP are not left running to avoid unexpected charges.
+- React app is deployed with a basic example – customize as needed.
