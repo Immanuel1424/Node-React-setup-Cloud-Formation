@@ -123,6 +123,41 @@ Resources:
           ToPort: !Ref AppPort
           SourceSecurityGroupId: !Ref PublicSecurityGroup
 
+  PrivateInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      ImageId: ami-0cd173613e262de82
+      SubnetId: !Ref PrivateSubnet
+      SecurityGroupIds: [!Ref PrivateSecurityGroup]
+      Tags:
+        - Key: Name
+          Value: PrivateInstance
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          exec > >(tee /var/log/user-data.log | logger -t user-data) 2>&1
+          apt update -y
+          apt install -y build-essential curl sudo
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt install -y nodejs
+          useradd -m -d /opt/demo-react-app -U -r -s /bin/bash react
+          echo 'react:react' | chpasswd
+          usermod -aG sudo react
+          echo "react ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/react
+          mkdir -p /opt/demo-react-app
+          chown -R react:react /opt/demo-react-app
+          sudo -u react bash <<EOF
+          cd /opt/demo-react-app
+          npm install -g serve pm2
+          npx create-react-app demo-react-app
+          cd demo-react-app
+          npm install
+          npm run build
+          npx serve -s build -l ${AppPort}
+          EOF
+
   PublicInstance:
     Type: AWS::EC2::Instance
     Properties:
@@ -139,12 +174,13 @@ Resources:
           #!/bin/bash
           apt update -y
           apt install -y nginx
+          rm -f /etc/nginx/sites-enabled/default
           cat <<EOF > /etc/nginx/sites-available/react-proxy
           server {
               listen 80;
               server_name localhost;
               location / {
-                  proxy_pass http://${PrivateInstance.PrivateIp}:$AppPort;
+                  proxy_pass http://${PrivateInstance.PrivateIp}:${AppPort};
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade \$http_upgrade;
                   proxy_set_header Connection 'upgrade';
@@ -155,29 +191,6 @@ Resources:
           EOF
           ln -s /etc/nginx/sites-available/react-proxy /etc/nginx/sites-enabled/
           nginx -t && systemctl restart nginx
-
-  PrivateInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyName
-      ImageId: ami-0cd173613e262de82
-      SubnetId: !Ref PrivateSubnet
-      SecurityGroupIds: [!Ref PrivateSecurityGroup]
-      Tags:
-        - Key: Name
-          Value: PrivateInstance
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          apt update && apt upgrade -y
-          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-          apt install -y nodejs
-          npm install -g create-react-app
-          npx create-react-app demo-react-app
-          cd demo-react-app
-          npm install
-          npm start &
 
 Outputs:
   PublicIP:
